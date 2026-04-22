@@ -44,12 +44,13 @@ export const login = async (credentials: LoginCredentials) => {
 export const logout = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('user')
-  window.location.href = '/login'
+  window.location.replace('/#/login')
 }
 
 export const getCurrentUser = (): User | null => {
   const userStr = localStorage.getItem('user')
   if (!userStr) return null
+
   try {
     return JSON.parse(userStr)
   } catch {
