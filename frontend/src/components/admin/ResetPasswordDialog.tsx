@@ -36,7 +36,6 @@ export default function ResetPasswordDialog({
       toast({
         title: 'Lỗi',
         description: 'Mật khẩu xác nhận không khớp',
-        variant: 'destructive',
       })
       return
     }
@@ -45,7 +44,6 @@ export default function ResetPasswordDialog({
       toast({
         title: 'Lỗi',
         description: 'Mật khẩu phải có ít nhất 6 ký tự',
-        variant: 'destructive',
       })
       return
     }
@@ -63,7 +61,6 @@ export default function ResetPasswordDialog({
       toast({
         title: 'Lỗi',
         description: error.response?.data?.detail || 'Có lỗi xảy ra',
-        variant: 'destructive',
       })
     }
   }
