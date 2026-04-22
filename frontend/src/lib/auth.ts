@@ -17,20 +17,23 @@ export interface User {
 }
 
 export const login = async (credentials: LoginCredentials) => {
-  const formData = new FormData()
+  const formData = new URLSearchParams()
   formData.append('username', credentials.username)
   formData.append('password', credentials.password)
+  formData.append('grant_type', '')
+  formData.append('scope', '')
+  formData.append('client_id', '')
+  formData.append('client_secret', '')
 
   const response = await api.post('/auth/login', formData, {
     headers: {
-      'Content-Type': 'multipart/form-data',
+      'Content-Type': 'application/x-www-form-urlencoded',
     },
   })
 
   const { access_token } = response.data
   localStorage.setItem('token', access_token)
 
-  // Get user info
   const userResponse = await api.get('/auth/me')
   const user = userResponse.data
   localStorage.setItem('user', JSON.stringify(user))
