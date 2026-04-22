@@ -1,0 +1,16 @@
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+
+# Environment variables
+backend/.env
+
+# Local database
+*.db
+
+# Node
+frontend/node_modules/
+
+# Temp files
+tmpclaude-*
