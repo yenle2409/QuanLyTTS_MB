@@ -44,7 +44,6 @@ export const login = async (credentials: LoginCredentials) => {
 export const logout = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('user')
-  window.location.replace('/#/login')
 }
 
 export const getCurrentUser = (): User | null => {
