@@ -791,7 +791,11 @@ function InternTab({ profiles, batches, isLoading, totalCount, internSearch, set
                       </TableCell>
                       <TableCell>{profile.mentor_name || <span className="text-muted-foreground text-sm">Chưa phân công</span>}</TableCell>
                       <TableCell>
-                        <Badge className={INTERN_STATUS_LABELS[profile.intern_status]?.color || 'bg-gray-100 text-gray-700'}>
+                        <Badge
+                          className={`whitespace-nowrap inline-flex min-w-[96px] items-center justify-center px-3 py-1 leading-none ${
+                            INTERN_STATUS_LABELS[profile.intern_status]?.color || 'bg-gray-100 text-gray-700'
+                          }`}
+                        >
                           {INTERN_STATUS_LABELS[profile.intern_status]?.label || profile.intern_status}
                         </Badge>
                       </TableCell>
@@ -872,7 +876,13 @@ function InternTab({ profiles, batches, isLoading, totalCount, internSearch, set
                   <div><span className="text-muted-foreground">Mentor:</span><span className="ml-2">{detail.mentor_name || 'Chưa phân công'}</span></div>
                   <div className="flex items-center">
                     <span className="text-muted-foreground">Trạng thái:</span>
-                    <Badge className={`ml-2 ${INTERN_STATUS_LABELS[detail.intern_status]?.color}`}>{INTERN_STATUS_LABELS[detail.intern_status]?.label}</Badge>
+                    <Badge
+                      className={`ml-2 whitespace-nowrap inline-flex min-w-[96px] items-center justify-center px-3 py-1 leading-none ${
+                        INTERN_STATUS_LABELS[detail.intern_status]?.color
+                      }`}
+                    >
+                      {INTERN_STATUS_LABELS[detail.intern_status]?.label}
+                    </Badge>
                   </div>
                 </div>
               </div>
