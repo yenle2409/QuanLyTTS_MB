@@ -324,20 +324,20 @@ export default function InternDashboard() {
             </div>
           )}
 
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0f2d6b] via-[#1a3d8a] to-[#2b5fc7] p-5 text-white shadow-lg">
-            <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-white/10 -translate-y-1/2 translate-x-1/2" />
-            <p className="mb-0.5 text-sm text-blue-100">Xin chào 👋</p>
-            <h2 className="mb-1 text-xl font-black">{currentUser.full_name || 'Thực tập sinh'}</h2>
-            {myBatch && <p className="mb-4 text-xs text-blue-200">{myBatch.batch_name}</p>}
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-slate-700 p-5 text-white">
+            <div className="absolute right-0 top-0 w-40 h-40 rounded-full bg-white/5 -translate-y-1/2 translate-x-1/2" />
+            <p className="text-sm text-slate-300 mb-0.5">Xin chào 👋</p>
+            <h2 className="text-xl font-black mb-1">{currentUser.full_name || 'Thực tập sinh'}</h2>
+            {myBatch && <p className="text-xs text-slate-400 mb-4">{myBatch.batch_name}</p>}
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
-                <span className="text-blue-100">Tiến độ hoàn thành</span>
-                <span className="font-bold text-cyan-200">{completionRate}%</span>
+                <span className="text-slate-300">Tiến độ hoàn thành</span>
+                <span className="font-bold text-emerald-400">{completionRate}%</span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-white/15">
-                <div className="h-full rounded-full bg-gradient-to-r from-cyan-300 to-sky-200 transition-all duration-700" style={{ width: `${completionRate}%` }} />
+              <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400 transition-all duration-700" style={{ width: `${completionRate}%` }} />
               </div>
-              <p className="text-xs text-blue-200">{approvedTasks} / {totalTasks} nhiệm vụ</p>
+              <p className="text-xs text-slate-400">{approvedTasks} / {totalTasks} nhiệm vụ</p>
             </div>
           </div>
 
