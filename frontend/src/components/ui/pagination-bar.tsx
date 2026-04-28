@@ -38,44 +38,69 @@ export default function PaginationBar({
   }
 
   return (
-    <div className="flex items-center justify-between mt-4 flex-wrap gap-3">
-      <div className="flex items-center gap-3 text-sm text-muted-foreground">
-        <span>Hiển thị {start}–{end} / {totalItems}</span>
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+        <span className="whitespace-nowrap">
+          Hiển thị {start}–{end} / {totalItems}
+        </span>
+
         {onPageSizeChange && (
-          <div className="flex items-center gap-1.5">
-            <span>Mỗi trang:</span>
+          <div className="flex items-center gap-2">
+            <span className="whitespace-nowrap mr-1">Mỗi trang:</span>
             <select
               value={pageSize}
-              onChange={e => { onPageSizeChange(Number(e.target.value)); onPageChange(1) }}
-              className="border rounded px-2 py-0.5 text-sm bg-white cursor-pointer"
+              onChange={(e) => {
+                onPageSizeChange(Number(e.target.value))
+                onPageChange(1)
+              }}
+              className="min-w-[88px] rounded-md border bg-white px-3 py-1 text-sm cursor-pointer"
             >
-              {pageSizeOptions.map(s => (
-                <option key={s} value={s}>{s}</option>
+              {pageSizeOptions.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
               ))}
             </select>
           </div>
         )}
       </div>
+
       <div className="flex items-center gap-1">
-        <Button variant="outline" size="icon" className="h-8 w-8"
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
           onClick={() => onPageChange(currentPage - 1)}
-          disabled={currentPage === 1}>
+          disabled={currentPage === 1}
+        >
           <ChevronLeft className="h-4 w-4" />
         </Button>
+
         {pages.map((p, i) =>
           p === '...' ? (
-            <span key={`dot-${i}`} className="px-2 text-muted-foreground">…</span>
+            <span key={`dot-${i}`} className="px-2 text-muted-foreground">
+              …
+            </span>
           ) : (
-            <Button key={p} variant={p === currentPage ? 'default' : 'outline'}
-              size="icon" className="h-8 w-8"
-              onClick={() => onPageChange(p as number)}>
+            <Button
+              key={p}
+              variant={p === currentPage ? 'default' : 'outline'}
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => onPageChange(p as number)}
+            >
               {p}
             </Button>
           )
         )}
-        <Button variant="outline" size="icon" className="h-8 w-8"
+
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
           onClick={() => onPageChange(currentPage + 1)}
-          disabled={currentPage === totalPages}>
+          disabled={currentPage === totalPages}
+        >
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
