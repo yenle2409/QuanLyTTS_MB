@@ -672,14 +672,9 @@ export default function LoginPage() {
                   <line x1="12" y1="8" x2="12" y2="12"/>
                   <line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
-                Tài khoản demo
+              
               </div>
-              <div className="mb-demo-accounts">
-                <span className="mb-demo-account"><strong>admin</strong> / admin123</span>
-                <span className="mb-demo-account"><strong>hr_user</strong> / hr123</span>
-                <span className="mb-demo-account"><strong>mentor_a</strong> / 111111</span>
-                <span className="mb-demo-account"><strong>ht1</strong> / 111111</span>
-              </div>
+              
             </div>
           </div>
         </div>
