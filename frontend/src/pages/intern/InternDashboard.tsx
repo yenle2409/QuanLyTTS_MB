@@ -657,25 +657,25 @@ export default function InternDashboard() {
 
       case 'profile': return (
         <div className="space-y-4">
-          <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-slate-700 rounded-2xl p-6 text-white">
-            <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full bg-white/5" />
-            <div className="absolute -left-6 -bottom-6 w-32 h-32 rounded-full bg-white/5" />
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0f2d6b] via-[#1a3d8a] to-[#2b5fc7] p-6 text-white shadow-lg">
+            <div className="absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/10" />
+            <div className="absolute -left-6 -bottom-6 h-32 w-32 rounded-full bg-white/[0.08]" />
             <div className="relative flex items-center gap-5">
-              <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center text-3xl font-black shrink-0">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white/20 text-3xl font-black">
                 {(currentUser.full_name || '?').charAt(0).toUpperCase()}
               </div>
-              <div className="flex-1 min-w-0">
-                <h2 className="font-black text-xl">{currentUser.full_name || '—'}</h2>
-                <p className="text-slate-300 text-sm">{currentUser.email}</p>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl font-black">{currentUser.full_name || '—'}</h2>
+                <p className="text-sm text-blue-100">{currentUser.email}</p>
                 {myProfile?.mentor_name && (
-                  <div className="mt-2 inline-flex items-center gap-2 bg-white/10 rounded-xl px-3 py-1.5">
-                    <User className="h-3.5 w-3.5 text-slate-300" />
-                    <span className="text-xs text-slate-200">Mentor: <span className="font-semibold text-white">{myProfile.mentor_name}</span></span>
+                  <div className="mt-2 inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5">
+                    <User className="h-3.5 w-3.5 text-blue-100" />
+                    <span className="text-xs text-blue-50">Mentor: <span className="font-semibold text-white">{myProfile.mentor_name}</span></span>
                   </div>
                 )}
               </div>
               {myBatch && (
-                <Badge className={`shrink-0 text-xs px-3 py-1 ${myBatch.status === 'open' ? 'bg-emerald-400/20 text-emerald-300 border-emerald-400/30' : 'bg-white/10 text-slate-300'}`}>
+                <Badge className={`shrink-0 px-3 py-1 text-xs ${myBatch.status === 'open' ? 'border-emerald-300/40 bg-emerald-400/20 text-emerald-100' : 'bg-white/15 text-blue-100'}`}>
                   {myBatch.status === 'open' ? '🟢 Đang thực tập' : '⚪ Đã kết thúc'}
                 </Badge>
               )}
