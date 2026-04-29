@@ -302,6 +302,7 @@ function buildPrintableReportHtml(args: {
       border: none; border-radius: 8px; padding: 10px 14px; cursor: pointer;
       font-weight: 700; font-size: 13px; font-family: Arial, sans-serif;
     }
+    .toolbar button:disabled { opacity: .65; cursor: not-allowed; }
     .toolbar .primary { background: #003f8f; color: #fff; }
     .toolbar .secondary { background: #e5e7eb; color: #111827; }
     .toolbar .hint { color: #4b5563; font-size: 12px; margin-left: 8px; }
@@ -336,10 +337,10 @@ function buildPrintableReportHtml(args: {
 </head>
 <body>
   <div class="toolbar no-print">
-    <button class="primary" onclick="downloadPdf()">⬇ Tải xuống PDF</button>
+    <button id="download-pdf-btn" class="primary" onclick="downloadPdf()">⬇ Tải xuống PDF</button>
     <button class="secondary" onclick="downloadHtml()">Tải bản HTML</button>
     <button class="secondary" onclick="window.close()">Đóng</button>
-    <span class="hint">Khi bấm tải PDF, chọn <b>Lưu thành PDF / Save as PDF</b> nếu trình duyệt hỏi.</span>
+    <span class="hint">Bấm <b>Tải xuống PDF</b> để lưu file trực tiếp. Nếu thư viện tạo PDF lỗi, hệ thống sẽ chuyển sang hộp thoại in.</span>
   </div>
   <div class="page">
     <div class="banner">
@@ -398,11 +399,49 @@ function buildPrintableReportHtml(args: {
 
     <div class="footer"><span>CONFIDENTIAL — For Management Use Only</span><span>${refNo}</span></div>
   </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-YcsIPGdhPK4P/uRW6/sruonlYj+41zK06t8EPcDDP2Z02R0+08RfYmGuSxtuwJ+Ueqfd1CHw3rMPTbGlu+g0TA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script>
-    function downloadPdf() {
-      window.print();
+    function setPdfButtonLoading(isLoading) {
+      var btn = document.getElementById('download-pdf-btn');
+      if (!btn) return;
+      btn.disabled = isLoading;
+      btn.textContent = isLoading ? 'Đang tạo PDF...' : '⬇ Tải xuống PDF';
+    }
+
+    async function downloadPdf() {
+      setPdfButtonLoading(true);
+      try {
+        var element = document.querySelector('.page');
+        if (!element || !window.html2pdf) {
+          throw new Error('PDF library is not ready');
+        }
+
+        var options = {
+          margin: [8, 8, 8, 8],
+          filename: '${filenameBase}.pdf',
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            scrollX: 0,
+            scrollY: 0,
+            windowWidth: element.scrollWidth
+          },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.card', '.sig'] }
+        };
+
+        await window.html2pdf().set(options).from(element).save();
+      } catch (error) {
+        alert('Không tạo được file PDF tự động. Trình duyệt sẽ mở hộp thoại in, hãy chọn Lưu thành PDF / Save as PDF.');
+        window.print();
+      } finally {
+        setPdfButtonLoading(false);
+      }
     }
     function downloadHtml() {
+
       var html = '<!doctype html>\n' + document.documentElement.outerHTML;
       var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
       var url = URL.createObjectURL(blob);
