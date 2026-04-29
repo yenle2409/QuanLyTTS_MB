@@ -424,12 +424,6 @@ function buildPrintableReportHtml(args: {
     <div class="footer"><span>CONFIDENTIAL — For Management Use Only</span><span>${refNo}</span></div>
   </div>
   <script>
-    var PDF_LIBRARY_URLS = [
-      'https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js',
-      'https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js',
-      'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
-    ];
-
     function setPdfButtonLoading(isLoading, text) {
       var btn = document.getElementById('download-pdf-btn');
       if (!btn) return;
@@ -437,68 +431,226 @@ function buildPrintableReportHtml(args: {
       btn.textContent = text || (isLoading ? 'Đang tạo PDF...' : '⬇ Tải xuống PDF');
     }
 
-    function loadScript(src) {
-      return new Promise(function(resolve, reject) {
-        var existed = document.querySelector('script[src="' + src + '"]');
-        if (existed) {
-          if (window.html2pdf) resolve();
-          else existed.addEventListener('load', resolve, { once: true });
-          return;
+    function blobToDownload(blob, filename) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+    }
+
+    function dataUrlToBytes(dataUrl) {
+      var commaIndex = dataUrl.indexOf(',');
+      var base64 = dataUrl.slice(commaIndex + 1);
+      var binary = atob(base64);
+      var bytes = new Uint8Array(binary.length);
+      for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes;
+    }
+
+    function textBytes(text) {
+      return new TextEncoder().encode(text);
+    }
+
+    function makePdfFromCanvas(canvas, filename) {
+      var pdfW = 595.28;
+      var pdfH = 841.89;
+      var pagePxHeight = Math.floor(canvas.width * pdfH / pdfW);
+      if (!pagePxHeight || pagePxHeight < 1) throw new Error('Kích thước báo cáo không hợp lệ');
+
+      var pageImages = [];
+      for (var y = 0; y < canvas.height; y += pagePxHeight) {
+        var sliceH = Math.min(pagePxHeight, canvas.height - y);
+        var pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = sliceH;
+        var pageCtx = pageCanvas.getContext('2d');
+        pageCtx.fillStyle = '#ffffff';
+        pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        pageCtx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+        pageImages.push({
+          bytes: dataUrlToBytes(pageCanvas.toDataURL('image/jpeg', 0.92)),
+          width: pageCanvas.width,
+          height: pageCanvas.height,
+          drawHeight: pdfW * (sliceH / canvas.width)
+        });
+      }
+
+      var objects = [];
+      function addObject(parts) {
+        objects.push(parts);
+        return objects.length;
+      }
+
+      var catalogId = addObject(['<< /Type /Catalog /Pages 2 0 R >>']);
+      var pagesId = addObject(null);
+      var pageIds = [];
+
+      pageImages.forEach(function (img, index) {
+        var imgName = 'Im' + index;
+        var imageId = addObject([
+          '<< /Type /XObject /Subtype /Image /Width ', String(img.width),
+          ' /Height ', String(img.height),
+          ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ', String(img.bytes.length),
+          ' >>
+stream
+', img.bytes, '
+endstream'
+        ]);
+
+        var drawH = Math.min(pdfH, img.drawHeight);
+        var drawY = pdfH - drawH;
+        var content = 'q ' + pdfW.toFixed(2) + ' 0 0 ' + drawH.toFixed(2) + ' 0 ' + drawY.toFixed(2) + ' cm /' + imgName + ' Do Q';
+        var contentId = addObject([
+          '<< /Length ', String(content.length), ' >>
+stream
+', content, '
+endstream'
+        ]);
+
+        var pageId = addObject([
+          '<< /Type /Page /Parent ', String(pagesId), ' 0 R /MediaBox [0 0 ', pdfW.toFixed(2), ' ', pdfH.toFixed(2),
+          '] /Resources << /XObject << /', imgName, ' ', String(imageId), ' 0 R >> >> /Contents ', String(contentId), ' 0 R >>'
+        ]);
+        pageIds.push(pageId);
+      });
+
+      objects[pagesId - 1] = [
+        '<< /Type /Pages /Kids [', pageIds.map(function (id) { return id + ' 0 R'; }).join(' '),
+        '] /Count ', String(pageIds.length), ' >>'
+      ];
+
+      var chunks = [];
+      var offsets = [];
+      var length = 0;
+      function append(part) {
+        var bytes = part instanceof Uint8Array ? part : textBytes(String(part));
+        chunks.push(bytes);
+        length += bytes.length;
+      }
+
+      append('%PDF-1.4
+');
+      for (var i = 0; i < objects.length; i++) {
+        offsets.push(length);
+        append(String(i + 1) + ' 0 obj
+');
+        var parts = objects[i];
+        for (var j = 0; j < parts.length; j++) append(parts[j]);
+        append('
+endobj
+');
+      }
+
+      var xrefOffset = length;
+      append('xref
+0 ' + String(objects.length + 1) + '
+');
+      append('0000000000 65535 f 
+');
+      offsets.forEach(function (offset) {
+        append(String(offset).padStart(10, '0') + ' 00000 n 
+');
+      });
+      append('trailer
+<< /Size ' + String(objects.length + 1) + ' /Root ' + String(catalogId) + ' 0 R >>
+');
+      append('startxref
+' + String(xrefOffset) + '
+%%EOF');
+
+      blobToDownload(new Blob(chunks, { type: 'application/pdf' }), filename);
+    }
+
+    function collectCssText() {
+      var css = '';
+      for (var i = 0; i < document.styleSheets.length; i++) {
+        try {
+          var rules = document.styleSheets[i].cssRules || [];
+          for (var j = 0; j < rules.length; j++) css += rules[j].cssText + '
+';
+        } catch (err) {
+          // Bỏ qua stylesheet không đọc được.
         }
-        var script = document.createElement('script');
-        script.src = src;
-        script.async = true;
-        script.onload = function() { resolve(); };
-        script.onerror = function() { reject(new Error('Không tải được thư viện PDF: ' + src)); };
-        document.head.appendChild(script);
+      }
+      css += '
+body{margin:0;background:#ffffff;}';
+      css += '
+.toolbar,.no-print{display:none!important;}';
+      css += '
+.page{margin:0!important;box-shadow:none!important;}';
+      return css;
+    }
+
+    function renderElementToCanvas(element) {
+      return new Promise(function (resolve, reject) {
+        var rect = element.getBoundingClientRect();
+        var width = Math.ceil(element.scrollWidth || rect.width || 794);
+        var height = Math.ceil(element.scrollHeight || rect.height || 1123);
+        var scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+
+        var clone = element.cloneNode(true);
+        clone.style.margin = '0';
+        clone.style.width = width + 'px';
+        clone.style.minHeight = 'auto';
+
+        var wrapper = document.createElement('div');
+        wrapper.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+        wrapper.style.width = width + 'px';
+        wrapper.style.minHeight = height + 'px';
+        wrapper.style.background = '#ffffff';
+
+        var style = document.createElement('style');
+        style.textContent = collectCssText();
+        wrapper.appendChild(style);
+        wrapper.appendChild(clone);
+
+        var xhtml = new XMLSerializer().serializeToString(wrapper);
+        var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '">' +
+          '<foreignObject x="0" y="0" width="100%" height="100%">' + xhtml + '</foreignObject></svg>';
+
+        var svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+        var svgUrl = URL.createObjectURL(svgBlob);
+        var img = new Image();
+        img.onload = function () {
+          try {
+            var canvas = document.createElement('canvas');
+            canvas.width = Math.ceil(width * scale);
+            canvas.height = Math.ceil(height * scale);
+            var ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.scale(scale, scale);
+            ctx.drawImage(img, 0, 0, width, height);
+            URL.revokeObjectURL(svgUrl);
+            resolve(canvas);
+          } catch (err) {
+            URL.revokeObjectURL(svgUrl);
+            reject(err);
+          }
+        };
+        img.onerror = function () {
+          URL.revokeObjectURL(svgUrl);
+          reject(new Error('Không render được báo cáo thành ảnh PDF'));
+        };
+        img.src = svgUrl;
       });
     }
 
-    async function ensurePdfLibrary() {
-      if (window.html2pdf) return;
-      var lastError = null;
-      for (var i = 0; i < PDF_LIBRARY_URLS.length; i++) {
-        try {
-          setPdfButtonLoading(true, 'Đang tải thư viện PDF...');
-          await loadScript(PDF_LIBRARY_URLS[i]);
-          if (window.html2pdf) return;
-        } catch (err) {
-          lastError = err;
-        }
-      }
-      throw lastError || new Error('Không tải được thư viện tạo PDF');
-    }
-
     async function downloadPdf() {
-      setPdfButtonLoading(true);
+      setPdfButtonLoading(true, 'Đang tạo PDF...');
       try {
         var element = document.querySelector('.page');
         if (!element) throw new Error('Không tìm thấy nội dung báo cáo');
-
-        await ensurePdfLibrary();
-
-        var options = {
-          margin: [8, 8, 8, 8],
-          filename: '${filenameBase}.pdf',
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            backgroundColor: '#ffffff',
-            scrollX: 0,
-            scrollY: 0,
-            windowWidth: element.scrollWidth,
-            windowHeight: element.scrollHeight
-          },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.card', '.sig'] }
-        };
-
-        setPdfButtonLoading(true, 'Đang tạo PDF...');
-        await window.html2pdf().set(options).from(element).save();
+        var canvas = await renderElementToCanvas(element);
+        makePdfFromCanvas(canvas, '${filenameBase}.pdf');
       } catch (error) {
         console.error(error);
-        alert('Không tải PDF tự động được. Hãy bấm nút “In / Lưu PDF” và chọn Save as PDF.');
+        alert('Không tạo được PDF tự động trên trình duyệt này. Hãy bấm “In / Lưu PDF” rồi chọn Save as PDF.');
       } finally {
         setPdfButtonLoading(false);
       }
@@ -509,16 +661,9 @@ function buildPrintableReportHtml(args: {
     }
 
     function downloadHtml() {
-      var html = '<!doctype html>\n' + document.documentElement.outerHTML;
-      var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = '${filenameBase}.html';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      var html = '<!doctype html>
+' + document.documentElement.outerHTML;
+      blobToDownload(new Blob([html], { type: 'text/html;charset=utf-8' }), '${filenameBase}.html');
     }
   </script>
 </body>
