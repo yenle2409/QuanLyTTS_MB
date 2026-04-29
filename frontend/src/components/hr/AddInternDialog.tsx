@@ -93,9 +93,9 @@ const removeVietnameseTones = (value: string) => {
     .replace(/Đ/g, 'D')
 }
 
-// Quy tắc: lấy tên + chữ cái đầu của họ và tên đệm.
-// Ví dụ: "Phan Quỳnh Như" -> "nhupq"
-const generateDefaultPassword = (fullName: string) => {
+// Quy tắc tạo mã từ họ tên: lấy tên + chữ cái đầu của họ và tên đệm.
+// Ví dụ: "Nguyễn Minh Quân" -> "quannm", "Phan Quỳnh Như" -> "nhupq"
+const generateNameBasedCode = (fullName: string) => {
   const words = removeVietnameseTones(fullName)
     .trim()
     .toLowerCase()
@@ -110,6 +110,9 @@ const generateDefaultPassword = (fullName: string) => {
   return `${lastName}${previousInitials}`
 }
 
+const generateDefaultPassword = generateNameBasedCode
+const generateUsernameFromFullName = generateNameBasedCode
+
 export default function AddInternDialog({ open, onOpenChange }: AddInternDialogProps) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -119,6 +122,7 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
   const [allMentors, setAllMentors] = useState<MentorItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [errors, setErrors] = useState<Partial<AddInternForm>>({})
+  const [isUsernameManuallyEdited, setIsUsernameManuallyEdited] = useState(false)
 
   // Load toàn bộ mentor 1 lần khi mở dialog
   useEffect(() => {
@@ -128,13 +132,6 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
         .catch(() => setAllMentors([]))
     }
   }, [open])
-
-  // Auto-generate username từ email
-  useEffect(() => {
-    if (form.email && !form.username) {
-      setForm(prev => ({ ...prev, username: form.email.split('@')[0] }))
-    }
-  }, [form.email, form.username])
 
   // Filter mentor theo phòng ban đã chọn
   // Nếu chưa chọn phòng ban → hiện tất cả mentor
@@ -164,6 +161,27 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
   const handleChange = (field: keyof AddInternForm, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }))
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: undefined }))
+  }
+
+  const handleFullNameChange = (value: string) => {
+    const generatedUsername = generateUsernameFromFullName(value)
+
+    setForm(prev => ({
+      ...prev,
+      full_name: value,
+      username: isUsernameManuallyEdited ? prev.username : generatedUsername,
+    }))
+
+    setErrors(prev => ({
+      ...prev,
+      full_name: undefined,
+      ...(!isUsernameManuallyEdited ? { username: undefined } : {}),
+    }))
+  }
+
+  const handleUsernameChange = (value: string) => {
+    setIsUsernameManuallyEdited(true)
+    handleChange('username', value)
   }
 
   // Khi đổi phòng ban → reset mentor đã chọn nếu mentor đó không thuộc phòng ban mới
@@ -241,6 +259,7 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
   const handleClose = () => {
     setForm(initialForm)
     setErrors({})
+    setIsUsernameManuallyEdited(false)
     onOpenChange(false)
   }
 
@@ -267,9 +286,9 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
                 <Input
                   id="full_name"
                   data-add-intern-field="full_name"
-                  placeholder="Nguyễn Văn A"
+                  placeholder="Nguyễn Minh Quân"
                   value={form.full_name}
-                  onChange={e => handleChange('full_name', e.target.value)}
+                  onChange={e => handleFullNameChange(e.target.value)}
                   className={errors.full_name ? fieldErrorClass : ''}
                 />
                 {errors.full_name && <p className="text-xs text-red-500">{errors.full_name}</p>}
@@ -310,9 +329,9 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
                 <Input
                   id="username"
                   data-add-intern-field="username"
-                  placeholder="nguyenvana"
+                  placeholder="quannm"
                   value={form.username}
-                  onChange={e => handleChange('username', e.target.value)}
+                  onChange={e => handleUsernameChange(e.target.value)}
                   className={errors.username ? fieldErrorClass : ''}
                 />
                 {errors.username && <p className="text-xs text-red-500">{errors.username}</p>}
