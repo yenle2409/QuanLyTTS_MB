@@ -72,6 +72,44 @@ const initialForm: AddInternForm = {
   batch_id: '', university: '', gpa: '', cv_link: '', mentor_id: '',
 }
 
+const requiredFieldOrder: (keyof AddInternForm)[] = [
+  'full_name',
+  'email',
+  'phone',
+  'username',
+  'department',
+  'batch_id',
+  'mentor_id',
+  'gpa',
+]
+
+const fieldErrorClass = 'border-red-500 ring-2 ring-red-100 focus-visible:ring-red-200'
+
+const removeVietnameseTones = (value: string) => {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+}
+
+// Quy tắc: lấy tên + chữ cái đầu của họ và tên đệm.
+// Ví dụ: "Phan Quỳnh Như" -> "nhupq"
+const generateDefaultPassword = (fullName: string) => {
+  const words = removeVietnameseTones(fullName)
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+
+  if (words.length === 0) return ''
+  if (words.length === 1) return words[0]
+
+  const lastName = words[words.length - 1]
+  const previousInitials = words.slice(0, -1).map(word => word.charAt(0)).join('')
+  return `${lastName}${previousInitials}`
+}
+
 export default function AddInternDialog({ open, onOpenChange }: AddInternDialogProps) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -96,7 +134,7 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
     if (form.email && !form.username) {
       setForm(prev => ({ ...prev, username: form.email.split('@')[0] }))
     }
-  }, [form.email])
+  }, [form.email, form.username])
 
   // Filter mentor theo phòng ban đã chọn
   // Nếu chưa chọn phòng ban → hiện tất cả mentor
@@ -104,6 +142,24 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
   const filteredMentors = form.department
     ? allMentors.filter(m => m.department === form.department)
     : allMentors
+
+  const openBatches = batches?.filter(b => b.status === 'open') || []
+
+  const scrollToFirstError = (newErrors: Partial<AddInternForm>) => {
+    const firstErrorField = requiredFieldOrder.find(field => newErrors[field])
+    if (!firstErrorField) return
+
+    requestAnimationFrame(() => {
+      const errorElement = document.querySelector(
+        `[data-add-intern-field="${firstErrorField}"]`
+      ) as HTMLElement | null
+
+      if (errorElement) {
+        errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setTimeout(() => errorElement.focus(), 250)
+      }
+    })
+  }
 
   const handleChange = (field: keyof AddInternForm, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -119,20 +175,29 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
       department: value,
       mentor_id: mentorStillValid ? prev.mentor_id : '',
     }))
-    if (errors.department) setErrors(prev => ({ ...prev, department: undefined }))
+    setErrors(prev => ({ ...prev, department: undefined, mentor_id: undefined }))
   }
 
   const validate = (): boolean => {
     const newErrors: Partial<AddInternForm> = {}
+
     if (!form.full_name.trim()) newErrors.full_name = 'Vui lòng nhập họ tên'
     if (!form.email.trim()) newErrors.email = 'Vui lòng nhập email'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) newErrors.email = 'Email không hợp lệ'
+    if (!form.phone.trim()) newErrors.phone = 'Vui lòng nhập số điện thoại'
+    else if (!/^(0|\+84)[0-9]{8,10}$/.test(form.phone.trim().replace(/\s/g, ''))) {
+      newErrors.phone = 'Số điện thoại không hợp lệ'
+    }
     if (!form.username.trim()) newErrors.username = 'Vui lòng nhập tên đăng nhập'
-    if (!form.batch_id) newErrors.batch_id = 'Vui lòng chọn đợt thực tập'
+    if (!form.department) newErrors.department = 'Vui lòng chọn phòng ban thực tập'
+    if (!form.batch_id || form.batch_id === '_none') newErrors.batch_id = 'Vui lòng chọn đợt thực tập'
+    if (!form.mentor_id || form.mentor_id === '_none') newErrors.mentor_id = 'Vui lòng phân công mentor'
     if (form.gpa && (isNaN(Number(form.gpa)) || Number(form.gpa) < 0 || Number(form.gpa) > 4)) {
       newErrors.gpa = 'GPA phải từ 0 đến 4'
     }
+
     setErrors(newErrors)
+    scrollToFirstError(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
@@ -140,17 +205,19 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
     if (!validate()) return
     setIsLoading(true)
     try {
+      const defaultPassword = generateDefaultPassword(form.full_name)
       const payload = {
         full_name:     form.full_name.trim(),
         email:         form.email.trim(),
-        phone:         form.phone.trim() || null,
+        phone:         form.phone.trim(),
         username:      form.username.trim(),
-        department:    form.department || null,
+        password:      defaultPassword,
+        department:    form.department,
         gender:        form.gender || null,
         date_of_birth: form.date_of_birth || null,
         address:       form.address.trim() || null,
         batch_id:      Number(form.batch_id),
-        mentor_id:     form.mentor_id && form.mentor_id !== '_none' ? Number(form.mentor_id) : null,
+        mentor_id:     Number(form.mentor_id),
         university:    form.university.trim() || null,
         gpa:           form.gpa ? Number(form.gpa) : null,
         cv_link:       form.cv_link.trim() || null,
@@ -177,11 +244,9 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
     onOpenChange(false)
   }
 
-  const openBatches = batches?.filter(b => b.status === 'open') || []
-
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-5xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
             <UserPlus className="h-5 w-5 text-blue-600" />
@@ -189,46 +254,68 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6 py-2">
+        <div className="space-y-5 py-2">
           {/* ── Thông tin tài khoản ── */}
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 pb-1 border-b">
               Thông tin tài khoản
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {/* Họ và tên */}
-              <div className="space-y-1 sm:col-span-2">
+              <div className="space-y-1">
                 <Label htmlFor="full_name">Họ và tên <span className="text-red-500">*</span></Label>
-                <Input id="full_name" placeholder="Nguyễn Văn A" value={form.full_name}
+                <Input
+                  id="full_name"
+                  data-add-intern-field="full_name"
+                  placeholder="Nguyễn Văn A"
+                  value={form.full_name}
                   onChange={e => handleChange('full_name', e.target.value)}
-                  className={errors.full_name ? 'border-red-500' : ''} />
+                  className={errors.full_name ? fieldErrorClass : ''}
+                />
                 {errors.full_name && <p className="text-xs text-red-500">{errors.full_name}</p>}
               </div>
 
               {/* Email */}
               <div className="space-y-1">
                 <Label htmlFor="email">Email <span className="text-red-500">*</span></Label>
-                <Input id="email" type="email" placeholder="example@gmail.com" value={form.email}
+                <Input
+                  id="email"
+                  data-add-intern-field="email"
+                  type="email"
+                  placeholder="example@gmail.com"
+                  value={form.email}
                   onChange={e => handleChange('email', e.target.value)}
-                  className={errors.email ? 'border-red-500' : ''} />
+                  className={errors.email ? fieldErrorClass : ''}
+                />
                 {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
               </div>
 
               {/* Số điện thoại */}
               <div className="space-y-1">
-                <Label htmlFor="phone">Số điện thoại</Label>
-                <Input id="phone" placeholder="0901234567" value={form.phone}
-                  onChange={e => handleChange('phone', e.target.value)} />
+                <Label htmlFor="phone">Số điện thoại <span className="text-red-500">*</span></Label>
+                <Input
+                  id="phone"
+                  data-add-intern-field="phone"
+                  placeholder="0901234567"
+                  value={form.phone}
+                  onChange={e => handleChange('phone', e.target.value)}
+                  className={errors.phone ? fieldErrorClass : ''}
+                />
+                {errors.phone && <p className="text-xs text-red-500">{errors.phone}</p>}
               </div>
 
               {/* Username */}
               <div className="space-y-1">
                 <Label htmlFor="username">Tên đăng nhập <span className="text-red-500">*</span></Label>
-                <Input id="username" placeholder="nguyenvana" value={form.username}
+                <Input
+                  id="username"
+                  data-add-intern-field="username"
+                  placeholder="nguyenvana"
+                  value={form.username}
                   onChange={e => handleChange('username', e.target.value)}
-                  className={errors.username ? 'border-red-500' : ''} />
+                  className={errors.username ? fieldErrorClass : ''}
+                />
                 {errors.username && <p className="text-xs text-red-500">{errors.username}</p>}
-                <p className="text-xs text-muted-foreground">Mật khẩu mặc định: intern123</p>
               </div>
 
               {/* Giới tính */}
@@ -245,26 +332,40 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
               {/* Ngày sinh */}
               <div className="space-y-1">
                 <Label htmlFor="date_of_birth">Ngày sinh</Label>
-                <Input id="date_of_birth" type="date" value={form.date_of_birth}
-                  onChange={e => handleChange('date_of_birth', e.target.value)} />
+                <Input
+                  id="date_of_birth"
+                  type="date"
+                  value={form.date_of_birth}
+                  onChange={e => handleChange('date_of_birth', e.target.value)}
+                />
               </div>
 
               {/* Địa chỉ */}
-              <div className="space-y-1 sm:col-span-2">
+              <div className="space-y-1 md:col-span-2">
                 <Label htmlFor="address">Địa chỉ</Label>
-                <Input id="address" placeholder="Số nhà, đường, quận/huyện, tỉnh/thành phố"
-                  value={form.address} onChange={e => handleChange('address', e.target.value)} />
+                <Input
+                  id="address"
+                  placeholder="Số nhà, đường, quận/huyện, tỉnh/thành phố"
+                  value={form.address}
+                  onChange={e => handleChange('address', e.target.value)}
+                />
               </div>
 
               {/* Phòng ban — khi đổi sẽ reset mentor nếu không hợp lệ */}
-              <div className="space-y-1 sm:col-span-2">
-                <Label>Phòng ban thực tập</Label>
+              <div className="space-y-1">
+                <Label>Phòng ban thực tập <span className="text-red-500">*</span></Label>
                 <Select value={form.department} onValueChange={handleDepartmentChange}>
-                  <SelectTrigger><SelectValue placeholder="Chọn phòng ban" /></SelectTrigger>
+                  <SelectTrigger
+                    data-add-intern-field="department"
+                    className={errors.department ? fieldErrorClass : ''}
+                  >
+                    <SelectValue placeholder="Chọn phòng ban" />
+                  </SelectTrigger>
                   <SelectContent>
                     {DEPARTMENTS.map(d => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {errors.department && <p className="text-xs text-red-500">{errors.department}</p>}
               </div>
             </div>
           </div>
@@ -274,12 +375,15 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 pb-1 border-b">
               Thông tin hồ sơ thực tập
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {/* Đợt thực tập */}
-              <div className="space-y-1 sm:col-span-2">
+              <div className="space-y-1">
                 <Label>Đợt thực tập <span className="text-red-500">*</span></Label>
                 <Select value={form.batch_id} onValueChange={v => handleChange('batch_id', v)}>
-                  <SelectTrigger className={errors.batch_id ? 'border-red-500' : ''}>
+                  <SelectTrigger
+                    data-add-intern-field="batch_id"
+                    className={errors.batch_id ? fieldErrorClass : ''}
+                  >
                     <SelectValue placeholder="Chọn đợt thực tập" />
                   </SelectTrigger>
                   <SelectContent>
@@ -297,9 +401,9 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
               </div>
 
               {/* Mentor — filter theo phòng ban */}
-              <div className="space-y-1 sm:col-span-2">
+              <div className="space-y-1 md:col-span-2">
                 <Label>
-                  Phân công Mentor
+                  Phân công Mentor <span className="text-red-500">*</span>
                   {form.department && (
                     <span className="ml-2 text-xs text-blue-600 font-normal">
                       {filteredMentors.length > 0
@@ -309,15 +413,17 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
                   )}
                 </Label>
                 <Select value={form.mentor_id} onValueChange={v => handleChange('mentor_id', v)}>
-                  <SelectTrigger>
+                  <SelectTrigger
+                    data-add-intern-field="mentor_id"
+                    className={errors.mentor_id ? fieldErrorClass : ''}
+                  >
                     <SelectValue placeholder={
                       form.department && filteredMentors.length === 0
                         ? `Không có mentor phòng ${form.department}`
-                        : 'Chọn Mentor (có thể bỏ qua)'
+                        : 'Chọn Mentor'
                     } />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="_none">Chưa phân công</SelectItem>
                     {filteredMentors.length === 0 && form.department ? (
                       <div className="px-3 py-2 text-xs text-muted-foreground">
                         Không có mentor nào thuộc phòng {form.department}
@@ -335,9 +441,10 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
                     )}
                   </SelectContent>
                 </Select>
+                {errors.mentor_id && <p className="text-xs text-red-500">{errors.mentor_id}</p>}
                 {form.department && filteredMentors.length === 0 && (
                   <p className="text-xs text-orange-500">
-                    Chưa có mentor nào được phân công cho phòng {form.department}. Bạn có thể bỏ qua và phân công sau.
+                    Chưa có mentor nào được phân công cho phòng {form.department}. Vui lòng tạo hoặc phân công mentor phù hợp trước khi thêm thực tập sinh.
                   </p>
                 )}
               </div>
@@ -345,24 +452,42 @@ export default function AddInternDialog({ open, onOpenChange }: AddInternDialogP
               {/* Trường đại học */}
               <div className="space-y-1">
                 <Label htmlFor="university">Trường đại học</Label>
-                <Input id="university" placeholder="Đại học Bách Khoa Hà Nội"
-                  value={form.university} onChange={e => handleChange('university', e.target.value)} />
+                <Input
+                  id="university"
+                  placeholder="Đại học Bách Khoa Hà Nội"
+                  value={form.university}
+                  onChange={e => handleChange('university', e.target.value)}
+                />
               </div>
 
               {/* GPA */}
               <div className="space-y-1">
                 <Label htmlFor="gpa">GPA</Label>
-                <Input id="gpa" type="number" placeholder="3.5" min={0} max={4} step={0.01}
-                  value={form.gpa} onChange={e => handleChange('gpa', e.target.value)}
-                  className={errors.gpa ? 'border-red-500' : ''} />
+                <Input
+                  id="gpa"
+                  data-add-intern-field="gpa"
+                  type="number"
+                  placeholder="3.5"
+                  min={0}
+                  max={4}
+                  step={0.01}
+                  value={form.gpa}
+                  onChange={e => handleChange('gpa', e.target.value)}
+                  className={errors.gpa ? fieldErrorClass : ''}
+                />
                 {errors.gpa && <p className="text-xs text-red-500">{errors.gpa}</p>}
               </div>
 
               {/* CV Link */}
-              <div className="space-y-1 sm:col-span-2">
+              <div className="space-y-1 lg:col-span-1">
                 <Label htmlFor="cv_link">Link CV</Label>
-                <Input id="cv_link" type="url" placeholder="https://drive.google.com/..."
-                  value={form.cv_link} onChange={e => handleChange('cv_link', e.target.value)} />
+                <Input
+                  id="cv_link"
+                  type="url"
+                  placeholder="https://drive.google.com/..."
+                  value={form.cv_link}
+                  onChange={e => handleChange('cv_link', e.target.value)}
+                />
               </div>
             </div>
           </div>
