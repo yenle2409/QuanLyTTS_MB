@@ -78,26 +78,49 @@ function useTaskCompletion() {
 }
 
 // ── Export ─────────────────────────────────────────────────────
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 async function exportReport(type: 'excel' | 'pdf', batchId: string, department: string) {
   const p = new URLSearchParams()
-  if (batchId    !== 'all') p.append('batch_id',   batchId)
+  if (batchId !== 'all') p.append('batch_id', batchId)
   if (department !== 'all') p.append('department', department)
   const qs = p.toString() ? `?${p}` : ''
   const endpoint = type === 'excel'
     ? `/statistics/export-excel${qs}`
     : `/statistics/export-pdf${qs}`
-  const res  = await api.get(endpoint, { responseType: 'blob' })
-  const ext  = type === 'excel' ? 'xlsx' : 'pdf'
-  const mime = type === 'excel'
+
+  const res = await api.get(endpoint, { responseType: 'blob' })
+  const contentType = String(res.headers?.['content-type'] || '').toLowerCase()
+  const ext = type === 'excel' ? 'xlsx' : 'pdf'
+  const expectedMime = type === 'excel'
     ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     : 'application/pdf'
-  const blob = new Blob([res.data], { type: mime })
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href = url
-  a.download = `bao-cao-thuc-tap-${new Date().toISOString().slice(0, 10)}.${ext}`
-  a.click()
-  URL.revokeObjectURL(url)
+
+  const rawBlob = res.data instanceof Blob ? res.data : new Blob([res.data], { type: expectedMime })
+  const blob = rawBlob.type ? rawBlob : new Blob([rawBlob], { type: expectedMime })
+
+  // Nếu backend trả HTML/JSON lỗi nhưng status vẫn 200, không tải nhầm thành file .pdf hỏng.
+  if (type === 'pdf' && contentType && !contentType.includes('application/pdf')) {
+    const text = await blob.text().catch(() => '')
+    throw new Error(text || 'Backend không trả về file PDF hợp lệ')
+  }
+
+  if (type === 'excel' && contentType && !contentType.includes('spreadsheet') && !contentType.includes('octet-stream')) {
+    const text = await blob.text().catch(() => '')
+    throw new Error(text || 'Backend không trả về file Excel hợp lệ')
+  }
+
+  downloadBlob(blob, `bao-cao-thuc-tap-${new Date().toISOString().slice(0, 10)}.${ext}`)
 }
 
 function exportToCSV(data: any[], filename: string) {
@@ -338,9 +361,10 @@ function buildPrintableReportHtml(args: {
 <body>
   <div class="toolbar no-print">
     <button id="download-pdf-btn" class="primary" onclick="downloadPdf()">⬇ Tải xuống PDF</button>
+    <button class="secondary" onclick="printToPdf()">In / Lưu PDF</button>
     <button class="secondary" onclick="downloadHtml()">Tải bản HTML</button>
     <button class="secondary" onclick="window.close()">Đóng</button>
-    <span class="hint">Bấm <b>Tải xuống PDF</b> để lưu file trực tiếp. Nếu thư viện tạo PDF lỗi, hệ thống sẽ chuyển sang hộp thoại in.</span>
+    <span class="hint">Ưu tiên bấm <b>Tải xuống PDF</b>. Nếu trình duyệt chặn, dùng <b>In / Lưu PDF</b>.</span>
   </div>
   <div class="page">
     <div class="banner">
@@ -399,22 +423,59 @@ function buildPrintableReportHtml(args: {
 
     <div class="footer"><span>CONFIDENTIAL — For Management Use Only</span><span>${refNo}</span></div>
   </div>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-YcsIPGdhPK4P/uRW6/sruonlYj+41zK06t8EPcDDP2Z02R0+08RfYmGuSxtuwJ+Ueqfd1CHw3rMPTbGlu+g0TA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script>
-    function setPdfButtonLoading(isLoading) {
+    var PDF_LIBRARY_URLS = [
+      'https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js',
+      'https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+    ];
+
+    function setPdfButtonLoading(isLoading, text) {
       var btn = document.getElementById('download-pdf-btn');
       if (!btn) return;
       btn.disabled = isLoading;
-      btn.textContent = isLoading ? 'Đang tạo PDF...' : '⬇ Tải xuống PDF';
+      btn.textContent = text || (isLoading ? 'Đang tạo PDF...' : '⬇ Tải xuống PDF');
+    }
+
+    function loadScript(src) {
+      return new Promise(function(resolve, reject) {
+        var existed = document.querySelector('script[src="' + src + '"]');
+        if (existed) {
+          if (window.html2pdf) resolve();
+          else existed.addEventListener('load', resolve, { once: true });
+          return;
+        }
+        var script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.onload = function() { resolve(); };
+        script.onerror = function() { reject(new Error('Không tải được thư viện PDF: ' + src)); };
+        document.head.appendChild(script);
+      });
+    }
+
+    async function ensurePdfLibrary() {
+      if (window.html2pdf) return;
+      var lastError = null;
+      for (var i = 0; i < PDF_LIBRARY_URLS.length; i++) {
+        try {
+          setPdfButtonLoading(true, 'Đang tải thư viện PDF...');
+          await loadScript(PDF_LIBRARY_URLS[i]);
+          if (window.html2pdf) return;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      throw lastError || new Error('Không tải được thư viện tạo PDF');
     }
 
     async function downloadPdf() {
       setPdfButtonLoading(true);
       try {
         var element = document.querySelector('.page');
-        if (!element || !window.html2pdf) {
-          throw new Error('PDF library is not ready');
-        }
+        if (!element) throw new Error('Không tìm thấy nội dung báo cáo');
+
+        await ensurePdfLibrary();
 
         var options = {
           margin: [8, 8, 8, 8],
@@ -426,22 +487,28 @@ function buildPrintableReportHtml(args: {
             backgroundColor: '#ffffff',
             scrollX: 0,
             scrollY: 0,
-            windowWidth: element.scrollWidth
+            windowWidth: element.scrollWidth,
+            windowHeight: element.scrollHeight
           },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
           pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.card', '.sig'] }
         };
 
+        setPdfButtonLoading(true, 'Đang tạo PDF...');
         await window.html2pdf().set(options).from(element).save();
       } catch (error) {
-        alert('Không tạo được file PDF tự động. Trình duyệt sẽ mở hộp thoại in, hãy chọn Lưu thành PDF / Save as PDF.');
-        window.print();
+        console.error(error);
+        alert('Không tải PDF tự động được. Hãy bấm nút “In / Lưu PDF” và chọn Save as PDF.');
       } finally {
         setPdfButtonLoading(false);
       }
     }
-    function downloadHtml() {
 
+    function printToPdf() {
+      window.print();
+    }
+
+    function downloadHtml() {
       var html = '<!doctype html>\n' + document.documentElement.outerHTML;
       var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
       var url = URL.createObjectURL(blob);
