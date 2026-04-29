@@ -1,7 +1,16 @@
 import axios from 'axios'
 
+const rawApiUrl = import.meta.env.VITE_API_URL?.trim()
+const fallbackApiUrl = 'https://quanlytts-backend.onrender.com/api/v1'
+
+const baseURL = rawApiUrl
+  ? rawApiUrl.replace(/\/+$/, '').endsWith('/api/v1')
+    ? rawApiUrl.replace(/\/+$/, '')
+    : `${rawApiUrl.replace(/\/+$/, '')}/api/v1`
+  : fallbackApiUrl
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://quanlytts-backend.onrender.com/api/v1',
+  baseURL,
 })
 
 // Request interceptor to add token
