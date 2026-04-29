@@ -1,5 +1,5 @@
 import { Navigate } from 'react-router-dom'
-import { isAuthenticated, hasRole } from '@/lib/auth'
+import { isAuthenticated, getCurrentUser } from '@/lib/auth'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -11,8 +11,17 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
     return <Navigate to="/login" replace />
   }
 
-  if (allowedRoles && !hasRole(allowedRoles)) {
-    return <Navigate to="/unauthorized" replace />
+  if (allowedRoles && allowedRoles.length > 0) {
+    const userRole = getCurrentUser()?.role?.toLowerCase()
+    const normalizedAllowedRoles = allowedRoles.map(role => role.toLowerCase())
+
+    if (!userRole) {
+      return <Navigate to="/login" replace />
+    }
+
+    if (!normalizedAllowedRoles.includes(userRole)) {
+      return <Navigate to="/unauthorized" replace />
+    }
   }
 
   return <>{children}</>

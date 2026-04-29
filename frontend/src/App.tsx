@@ -17,8 +17,9 @@ const queryClient = new QueryClient()
 function isFullyAuthenticated(): boolean {
   if (!isAuthenticated()) return false
   const user = getCurrentUser()
-  if (!user || !user.role) return false
-  return ['admin', 'hr', 'mentor', 'intern'].includes(user.role)
+  const role = user?.role?.toLowerCase()
+  if (!role) return false
+  return ['admin', 'hr', 'mentor', 'intern'].includes(role)
 }
 
 function App() {
@@ -42,7 +43,7 @@ function App() {
             />
 
             <Route
-              path="/admin"
+              path="/admin/*"
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <AdminDashboard />
@@ -51,7 +52,7 @@ function App() {
             />
 
             <Route
-              path="/hr"
+              path="/hr/*"
               element={
                 <ProtectedRoute allowedRoles={['hr', 'admin']}>
                   <HRDashboard />
@@ -60,7 +61,7 @@ function App() {
             />
 
             <Route
-              path="/mentor"
+              path="/mentor/*"
               element={
                 <ProtectedRoute allowedRoles={['mentor', 'admin']}>
                   <MentorDashboard />
@@ -69,7 +70,7 @@ function App() {
             />
 
             <Route
-              path="/intern"
+              path="/intern/*"
               element={
                 <ProtectedRoute allowedRoles={['intern']}>
                   <InternDashboard />

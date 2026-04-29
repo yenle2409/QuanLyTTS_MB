@@ -49,7 +49,7 @@ export default function DashboardLayout({
   const navigate = useNavigate()
   const location = useLocation()
 
-  const handleLogout = () => { logout(); navigate('/login') }
+  const handleLogout = () => { logout(); navigate('/login', { replace: true }) }
 
   // ── Menu definitions per role ──────────────────────────────────────────────
   const getMenuItems = (): MenuItem[] => {
@@ -107,7 +107,9 @@ export default function DashboardLayout({
 
   const isActive = (item: MenuItem) => {
     if (item.tab) return activeTab === item.tab
-    return location.pathname === item.path
+    if (!item.path) return false
+    if (item.path === '/admin') return location.pathname === '/admin'
+    return location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
   }
 
   // page title from active menu item
