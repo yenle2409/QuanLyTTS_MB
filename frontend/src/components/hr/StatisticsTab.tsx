@@ -78,26 +78,60 @@ function useTaskCompletion() {
 }
 
 // ── Export ─────────────────────────────────────────────────────
+function getFileNameFromContentDisposition(header: string | undefined, fallback: string) {
+  if (!header) return fallback
+
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1].replace(/"/g, ''))
+
+  const normalMatch = header.match(/filename="?([^";]+)"?/i)
+  if (normalMatch?.[1]) return normalMatch[1]
+
+  return fallback
+}
+
 async function exportReport(type: 'excel' | 'pdf', batchId: string, department: string) {
   const p = new URLSearchParams()
   if (batchId    !== 'all') p.append('batch_id',   batchId)
   if (department !== 'all') p.append('department', department)
+
   const qs = p.toString() ? `?${p}` : ''
   const endpoint = type === 'excel'
     ? `/statistics/export-excel${qs}`
     : `/statistics/export-pdf${qs}`
-  const res  = await api.get(endpoint, { responseType: 'blob' })
+
   const ext  = type === 'excel' ? 'xlsx' : 'pdf'
   const mime = type === 'excel'
     ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     : 'application/pdf'
-  const blob = new Blob([res.data], { type: mime })
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
+
+  const res = await api.get(endpoint, {
+    responseType: 'blob',
+    headers: { Accept: mime },
+  })
+
+  const blob = res.data instanceof Blob
+    ? res.data
+    : new Blob([res.data], { type: mime })
+
+  if (!blob || blob.size === 0) {
+    throw new Error('EMPTY_EXPORT_FILE')
+  }
+
+  const contentDisposition = res.headers?.['content-disposition'] as string | undefined
+  const fallbackName = `bao-cao-thuc-tap-${new Date().toISOString().slice(0, 10)}.${ext}`
+  const fileName = getFileNameFromContentDisposition(contentDisposition, fallbackName)
+
+  const url = URL.createObjectURL(new Blob([blob], { type: blob.type || mime }))
+  const a = document.createElement('a')
   a.href = url
-  a.download = `bao-cao-thuc-tap-${new Date().toISOString().slice(0, 10)}.${ext}`
+  a.download = fileName
+  a.style.display = 'none'
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  document.body.removeChild(a)
+
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 function exportToCSV(data: any[], filename: string) {
@@ -110,284 +144,6 @@ function exportToCSV(data: any[], filename: string) {
   const a    = document.createElement('a')
   a.href = url; a.download = filename; a.click()
   URL.revokeObjectURL(url)
-}
-
-
-function escapeHtml(value: unknown) {
-  return String(value ?? '—')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
-}
-
-function safeDate(value: unknown) {
-  if (!value) return '—'
-  const d = new Date(String(value))
-  if (Number.isNaN(d.getTime())) return '—'
-  return format(d, 'dd/MM/yyyy', { locale: vi })
-}
-
-function getBatchLabel(batchFilter: string, batches: any[]) {
-  if (batchFilter === 'all') return 'Tất cả đợt'
-  return batches.find((b: any) => String(b.id) === batchFilter)?.batch_name || 'Đợt đã chọn'
-}
-
-function getFilteredReportData({
-  batchFilter,
-  deptFilter,
-  batches,
-  profiles,
-  tasks,
-  evaluations,
-  completionData,
-}: {
-  batchFilter: string
-  deptFilter: string
-  batches: any[]
-  profiles: any[]
-  tasks: any[]
-  evaluations: any[]
-  completionData: any[]
-}) {
-  const selectedProfiles = profiles.filter((p: any) => {
-    const batchOk = batchFilter === 'all' || String(p.batch_id) === batchFilter
-    const deptOk = deptFilter === 'all' || p.department === deptFilter
-    return batchOk && deptOk
-  })
-  const selectedInternIds = new Set(selectedProfiles.map((p: any) => p.user_id))
-
-  const filteredTasks = tasks.filter((t: any) => {
-    const batchOk = batchFilter === 'all' || String(t.batch_id) === batchFilter
-    const deptOk = deptFilter === 'all' || selectedInternIds.has(t.intern_id)
-    return batchOk && deptOk
-  })
-
-  const filteredEvaluations = evaluations.filter((e: any) => {
-    if (deptFilter !== 'all' || batchFilter !== 'all') return selectedInternIds.has(e.intern_id)
-    return true
-  })
-
-  const filteredCompletion = completionData.filter((c: any) => {
-    const batchOk = batchFilter === 'all' || String(c.batch_id) === batchFilter
-    const deptOk = deptFilter === 'all' || selectedInternIds.has(c.intern_id)
-    return batchOk && deptOk
-  })
-
-  const totalTasks = filteredTasks.length
-  const approvedTasks = filteredTasks.filter((t: any) => t.status === 'approved').length
-  const submittedTasks = filteredTasks.filter((t: any) => t.status === 'submitted').length
-  const overdueTasks = filteredTasks.filter((t: any) => t.status === 'overdue').length
-  const completionRate = totalTasks ? Math.round((approvedTasks / totalTasks) * 1000) / 10 : 0
-  const avgScore = filteredEvaluations.length
-    ? Math.round((filteredEvaluations.reduce((sum: number, e: any) => sum + Number(e.total_score || 0), 0) / filteredEvaluations.length) * 10) / 10
-    : 0
-
-  const batchRows = batches
-    .filter((b: any) => batchFilter === 'all' || String(b.id) === batchFilter)
-    .map((b: any) => {
-      const bProfiles = selectedProfiles.filter((p: any) => p.batch_id === b.id)
-      const bIds = new Set(bProfiles.map((p: any) => p.user_id))
-      const bTasks = filteredTasks.filter((t: any) => t.batch_id === b.id)
-      const bEvals = filteredEvaluations.filter((e: any) => bIds.has(e.intern_id))
-      const bApproved = bTasks.filter((t: any) => t.status === 'approved').length
-      return {
-        name: b.batch_name,
-        status: b.status === 'open' ? 'Đang mở' : 'Đã đóng',
-        period: `${safeDate(b.start_date)} - ${safeDate(b.end_date)}`,
-        internCount: bProfiles.length,
-        totalTasks: bTasks.length,
-        approvedTasks: bApproved,
-        completionRate: bTasks.length ? Math.round((bApproved / bTasks.length) * 1000) / 10 : 0,
-        evaluatedCount: bEvals.length,
-      }
-    })
-
-  return {
-    selectedProfiles,
-    filteredTasks,
-    filteredEvaluations,
-    filteredCompletion,
-    batchRows,
-    totalTasks,
-    approvedTasks,
-    submittedTasks,
-    overdueTasks,
-    completionRate,
-    avgScore,
-  }
-}
-
-function buildPrintableReportHtml(args: {
-  batchFilter: string
-  deptFilter: string
-  batches: any[]
-  profiles: any[]
-  tasks: any[]
-  evaluations: any[]
-  completionData: any[]
-}) {
-  const data = getFilteredReportData(args)
-  const generatedAt = format(new Date(), 'dd/MM/yyyy HH:mm', { locale: vi })
-  const batchLabel = getBatchLabel(args.batchFilter, args.batches)
-  const deptLabel = args.deptFilter === 'all' ? 'Tất cả phòng ban' : args.deptFilter
-  const refNo = `MB-HR-INT-${format(new Date(), 'yyyyMMdd')}-001`
-
-  const statusRows = Object.entries(STATUS_LABELS).map(([key, label]) => {
-    const count = data.filteredTasks.filter((t: any) => t.status === key).length
-    const rate = data.totalTasks ? Math.round((count / data.totalTasks) * 1000) / 10 : 0
-    return `<tr><td>${escapeHtml(label)}</td><td>${count}</td><td>${rate}%</td></tr>`
-  }).join('')
-
-  const batchRows = data.batchRows.length
-    ? data.batchRows.map((b: any) => `
-      <tr>
-        <td>${escapeHtml(b.name)}</td>
-        <td>${escapeHtml(b.period)}</td>
-        <td>${escapeHtml(b.status)}</td>
-        <td>${b.internCount}</td>
-        <td>${b.totalTasks}</td>
-        <td>${b.approvedTasks}</td>
-        <td>${b.completionRate}%</td>
-        <td>${b.evaluatedCount}</td>
-      </tr>
-    `).join('')
-    : '<tr><td colspan="8" class="empty">Không có dữ liệu</td></tr>'
-
-  const topRows = [...data.filteredCompletion]
-    .sort((a: any, b: any) => Number(b.completion_rate || 0) - Number(a.completion_rate || 0))
-    .slice(0, 12)
-    .map((c: any, idx: number) => `
-      <tr>
-        <td>${idx + 1}</td>
-        <td>${escapeHtml(c.intern_name)}</td>
-        <td>${Number(c.total_tasks || 0)}</td>
-        <td>${Number(c.approved || 0)}</td>
-        <td>${Number(c.submitted || 0)}</td>
-        <td>${Number(c.overdue || 0)}</td>
-        <td>${Number(c.completion_rate || 0)}%</td>
-      </tr>
-    `).join('') || '<tr><td colspan="7" class="empty">Không có dữ liệu</td></tr>'
-
-  const evalRows = [...data.filteredEvaluations]
-    .sort((a: any, b: any) => Number(b.total_score || 0) - Number(a.total_score || 0))
-    .slice(0, 15)
-    .map((e: any, idx: number) => `
-      <tr>
-        <td>${idx + 1}</td>
-        <td>${escapeHtml(e.intern_name)}</td>
-        <td>${escapeHtml(e.mentor_name)}</td>
-        <td>${escapeHtml(e.total_score)}</td>
-        <td>${escapeHtml(e.ranking)}</td>
-      </tr>
-    `).join('') || '<tr><td colspan="5" class="empty">Chưa có đánh giá</td></tr>'
-
-  return `<!doctype html>
-<html lang="vi">
-<head>
-  <meta charset="utf-8" />
-  <title>Báo cáo thực tập sinh</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; margin: 0; color: #111827; background: #ffffff; }
-    .page { width: 210mm; min-height: 297mm; padding: 16mm; margin: 0 auto; }
-    .banner { background: #003f8f; color: #fff; padding: 14px 18px; border-radius: 10px; }
-    .bank { font-size: 18px; font-weight: 800; letter-spacing: .04em; }
-    .sub { margin-top: 4px; font-size: 12px; opacity: .9; }
-    h1 { color: #002b64; margin: 22px 0 8px; font-size: 22px; text-align: center; }
-    h2 { color: #003f8f; margin: 24px 0 10px; font-size: 15px; border-left: 5px solid #003f8f; padding-left: 8px; }
-    .meta { text-align: center; color: #4b5563; font-size: 12px; margin-bottom: 16px; }
-    .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0; }
-    .card { border: 1px solid #dbeafe; background: #eff6ff; border-radius: 10px; padding: 12px; }
-    .card .label { color: #4b5563; font-size: 11px; text-transform: uppercase; font-weight: 700; }
-    .card .value { color: #003f8f; font-size: 24px; font-weight: 900; margin-top: 4px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 11px; page-break-inside: auto; }
-    th { background: #003f8f; color: #fff; text-align: left; padding: 8px; border: 1px solid #003f8f; }
-    td { padding: 7px 8px; border: 1px solid #d1d5db; vertical-align: middle; }
-    tr:nth-child(even) td { background: #f9fafb; }
-    .empty { text-align: center; color: #6b7280; padding: 18px; }
-    .note { font-size: 11px; color: #4b5563; line-height: 1.5; background: #f9fafb; padding: 10px 12px; border-radius: 8px; }
-    .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 26px; }
-    .sig { height: 90px; border: 1px solid #d1d5db; border-radius: 8px; text-align: center; padding-top: 12px; color: #374151; font-weight: 700; }
-    .sig span { display: block; margin-top: 46px; color: #9ca3af; font-size: 10px; font-weight: 400; }
-    .footer { margin-top: 22px; border-top: 1px solid #d1d5db; padding-top: 8px; color: #6b7280; font-size: 10px; display: flex; justify-content: space-between; }
-    @media print {
-      body { background: #fff; }
-      .page { width: auto; min-height: auto; padding: 12mm; }
-      .no-print { display: none !important; }
-      h2, table { break-inside: avoid; }
-    }
-  </style>
-</head>
-<body>
-  <div class="page">
-    <div class="banner">
-      <div class="bank">MB MILITARY BANK</div>
-      <div class="sub">Hệ thống Quản lý Thực tập</div>
-    </div>
-
-    <h1>BÁO CÁO TỔNG HỢP TÌNH HÌNH THỰC TẬP SINH</h1>
-    <div class="meta">Đợt: ${escapeHtml(batchLabel)} &nbsp;•&nbsp; Phòng ban: ${escapeHtml(deptLabel)} &nbsp;•&nbsp; Ngày xuất: ${generatedAt} &nbsp;•&nbsp; Mã BC: ${refNo}</div>
-
-    <div class="cards">
-      <div class="card"><div class="label">Tổng TTS</div><div class="value">${data.selectedProfiles.length}</div></div>
-      <div class="card"><div class="label">Tổng nhiệm vụ</div><div class="value">${data.totalTasks}</div></div>
-      <div class="card"><div class="label">Tỷ lệ hoàn thành</div><div class="value">${data.completionRate}%</div></div>
-      <div class="card"><div class="label">Điểm TB</div><div class="value">${data.avgScore}/10</div></div>
-    </div>
-
-    <h2>I. Tóm tắt điều hành</h2>
-    <div class="note">
-      Hệ thống ghi nhận ${data.selectedProfiles.length} thực tập sinh trong phạm vi lọc. Có ${data.approvedTasks}/${data.totalTasks} nhiệm vụ đã hoàn thành, ${data.submittedTasks} nhiệm vụ đã nộp chờ xử lý và ${data.overdueTasks} nhiệm vụ quá hạn. Điểm đánh giá trung bình hiện tại là ${data.avgScore}/10.
-    </div>
-
-    <h2>II. Thống kê theo đợt thực tập</h2>
-    <table>
-      <thead><tr><th>Tên đợt</th><th>Thời gian</th><th>Trạng thái</th><th>TTS</th><th>Tổng NV</th><th>Đã duyệt</th><th>Tỷ lệ HT</th><th>Đã ĐG</th></tr></thead>
-      <tbody>${batchRows}</tbody>
-    </table>
-
-    <h2>III. Phân bố trạng thái nhiệm vụ</h2>
-    <table>
-      <thead><tr><th>Trạng thái</th><th>Số lượng</th><th>Tỷ lệ</th></tr></thead>
-      <tbody>${statusRows}</tbody>
-    </table>
-
-    <h2>IV. Top thực tập sinh theo tỷ lệ hoàn thành</h2>
-    <table>
-      <thead><tr><th>#</th><th>Họ tên</th><th>Tổng NV</th><th>Đã duyệt</th><th>Đã nộp</th><th>Quá hạn</th><th>Tỷ lệ HT</th></tr></thead>
-      <tbody>${topRows}</tbody>
-    </table>
-
-    <h2>V. Kết quả đánh giá</h2>
-    <table>
-      <thead><tr><th>#</th><th>Họ tên TTS</th><th>Mentor</th><th>Tổng điểm</th><th>Xếp loại</th></tr></thead>
-      <tbody>${evalRows}</tbody>
-    </table>
-
-    <h2>VI. Kết luận và ký duyệt</h2>
-    <div class="note">
-      HR cần tiếp tục theo dõi các nhiệm vụ quá hạn và các thực tập sinh có tỷ lệ hoàn thành thấp. Báo cáo được tạo từ dữ liệu hiện có trên hệ thống tại thời điểm xuất.
-    </div>
-    <div class="signatures">
-      <div class="sig">Người lập báo cáo<span>Ký tên & ngày</span></div>
-      <div class="sig">Trưởng phòng HR<span>Ký tên & ngày</span></div>
-      <div class="sig">Ban quản lý<span>Ký tên & ngày</span></div>
-    </div>
-
-    <div class="footer"><span>CONFIDENTIAL — For Management Use Only</span><span>${refNo}</span></div>
-  </div>
-</body>
-</html>`
-}
-
-function writePrintableReport(printWindow: Window, html: string) {
-  printWindow.document.open()
-  printWindow.document.write(html)
-  printWindow.document.close()
-  printWindow.focus()
-  setTimeout(() => printWindow.print(), 500)
 }
 
 function getScoreColor(s: number) {
@@ -423,40 +179,10 @@ export default function StatisticsTab() {
 
   const handleExport = async (type: 'excel' | 'pdf') => {
     setExporting(type)
-
-    // PDF trên Render có thể lỗi do thiếu thư viện/font backend.
-    // Vì vậy PDF sẽ thử tải từ backend trước; nếu lỗi thì xuất bằng trình duyệt từ dữ liệu frontend.
-    let pdfWindow: Window | null = null
-    if (type === 'pdf') {
-      pdfWindow = window.open('', '_blank')
-      if (pdfWindow) {
-        pdfWindow.document.write('<p style="font-family: Arial, sans-serif; padding: 24px">Đang chuẩn bị báo cáo PDF...</p>')
-      }
-    }
-
     try {
       await exportReport(type, batchFilter, deptFilter)
-      if (pdfWindow && !pdfWindow.closed) pdfWindow.close()
-      toast({ title: 'Thành công', description: `Đã xuất ${type === 'excel' ? 'Excel' : 'PDF'} thành công.` })
     } catch {
-      if (type === 'pdf' && pdfWindow) {
-        const html = buildPrintableReportHtml({
-          batchFilter,
-          deptFilter,
-          batches,
-          profiles: allProfiles,
-          tasks,
-          evaluations,
-          completionData,
-        })
-        writePrintableReport(pdfWindow, html)
-        toast({
-          title: 'Đã mở bản PDF',
-          description: 'Chọn Save as PDF/Lưu thành PDF trong hộp thoại in của trình duyệt.',
-        })
-      } else {
-        toast({ title: 'Lỗi', description: `Không xuất được ${type === 'excel' ? 'Excel' : 'PDF'}. Vui lòng thử lại.` })
-      }
+      toast({ title: 'Lỗi', description: `Không xuất được ${type === 'excel' ? 'Excel' : 'PDF'}. Vui lòng thử lại.` })
     } finally {
       setExporting(null)
     }
